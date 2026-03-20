@@ -1,13 +1,20 @@
-import threading
-
 import streamlit as st
 from datetime import datetime
-import time
+from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
 from langchain_ollama import ChatOllama
 import ollama
+import os
 
-st.set_page_config(page_title="Ollama Chat", page_icon=":robot:", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Ollama Chat", page_icon=":llama:", initial_sidebar_state="collapsed")
+
+if "model_name" not in st.session_state:
+    # Load environment variables from .env file
+    load_dotenv()
+    st.session_state["model_name"] = os.getenv("OLLAMA_MODEL", "gemma3:27b")
+    st.session_state["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/")
+if "about_models" not in st.session_state:
+    st.session_state["about_models"] = {}
 
 # To reduce the display size of the Parameters and Quantization metrics
 st.markdown("""
@@ -25,11 +32,11 @@ st.markdown("""
 def get_about_model(model_name, _llm):
     try:
         return _llm.invoke({"user_input": "Tell me about yourself"}).content
-    except Exception as e:
+    except Exception:
         return f"{model_name} does not support chat."
 
 @st.cache_resource(show_spinner="Loading model...")
-def get_model(model_name: str = "gpt-oss", base_url: str = "http://localhost:11434/"):
+def get_model(model_name: str, base_url: str):
     llm = ChatOllama(model=model_name, base_url=base_url)
     prompt = PromptTemplate(
         input_variables=["user_input"],
@@ -39,18 +46,9 @@ def get_model(model_name: str = "gpt-oss", base_url: str = "http://localhost:114
     return llm
 
 @st.cache_data
-def get_models():
-    return ollama.list()
-
-if "model_name" not in st.session_state:
-    st.session_state["model_name"] = "gpt-oss"
-if "base_url" not in st.session_state:
-    st.session_state["base_url"] = "http://localhost:11434/"
-
-if "models" not in st.session_state:
-    st.session_state["models"] = get_models()
-if "about_models" not in st.session_state:
-    st.session_state["about_models"] = {}
+def get_models(base_url: str):
+    client = ollama.Client(host=base_url)
+    return client.list()
 
 def clear_messages():
     st.session_state["messages"] = []
@@ -61,6 +59,9 @@ if "messages" not in st.session_state:
 
 llm = get_model(st.session_state["model_name"], st.session_state["base_url"])
 
+if "models" not in st.session_state:
+    st.session_state["models"] = get_models(st.session_state["base_url"])
+
 title_row = st.container(
     horizontal=True,
     vertical_alignment="bottom"
@@ -70,7 +71,7 @@ with st.sidebar:
     st.subheader("Ollama Settings")
     model_names = [model.model for model in st.session_state["models"]["models"]]
     model = st.selectbox("Model", options=model_names, key="model_name")
-    base_url = st.text_input("Base URL", "http://localhost:11434/")
+    st.write(f"Base URL: {st.session_state['base_url']}")
 
     if "model_name" in st.session_state and st.session_state["model_name"]:
         model_name = st.session_state["model_name"]
@@ -114,6 +115,7 @@ with st.sidebar:
 
         # Display "About {model_name}" text area
         if model_name not in st.session_state["about_models"]:
+            st.write("")
             st.session_state["about_models"][model_name] = get_about_model(model_name, llm)
             st.rerun()
         else:
@@ -122,9 +124,11 @@ with st.sidebar:
             st.write(st.session_state["about_models"][model_name])
 
 with title_row:
-    st.title("Chat with Ollama")
+    st.title("🦙 Chat with Ollama Models")
     if len(st.session_state["messages"]) > 0:
-        st.button("Clear", on_click=clear_messages)
+        st.button("Clear", icon=":material/refresh:",on_click=clear_messages)
+
+st.divider()
 
 # Display history messages
 for message in st.session_state["messages"]:
@@ -138,8 +142,11 @@ if prompt := st.chat_input("What's up?"):
     st.session_state["messages"].append({"role": "user", "content": prompt})
     with st.chat_message("assistant"):
         llm = get_model(st.session_state["model_name"], st.session_state["base_url"])
-        response = st.write_stream(
-            llm.stream({"user_input": prompt})
-        ) + f"\n\n*answered by {st.session_state['model_name']}*"
+        try:
+            response = st.write_stream(
+                llm.stream({"user_input": prompt})
+            ) + f"\n\n*answered by {st.session_state['model_name']}*"
+        except Exception as e:
+            response = f"Error: {e}"
     st.session_state["messages"].append({"role": "assistant", "content": response})
     st.rerun()
