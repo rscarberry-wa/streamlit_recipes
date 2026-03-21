@@ -4,9 +4,9 @@
 
 This project was developed with Python 3.13 using uv to manage dependencies and the virtual environment.
 
-### Simple Ollama Chat
+### Simple Ollama Query
 
-A simple Streamlit app for chatting with Ollama models.
+A simple Streamlit app for querying various Ollama models that have been downloaded to the server. Since no chat history is maintained, every query is independent of the previous ones.
 
 To run:
 
