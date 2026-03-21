@@ -124,7 +124,7 @@ with st.sidebar:
             st.write(st.session_state["about_models"][model_name])
 
 with title_row:
-    st.title("🦙 Chat with Ollama Models")
+    st.title("🦙 Ask Ollama Models")
     if len(st.session_state["messages"]) > 0:
         st.button("Clear", icon=":material/refresh:",on_click=clear_messages)
 
@@ -136,7 +136,7 @@ for message in st.session_state["messages"]:
         st.markdown(message["content"])
 
 # React to user input
-if prompt := st.chat_input("What's up?"):
+if prompt := st.chat_input(f"Ask {st.session_state['model_name']} a question:"):
     with st.chat_message("user"):
         st.markdown(prompt)
     st.session_state["messages"].append({"role": "user", "content": prompt})
