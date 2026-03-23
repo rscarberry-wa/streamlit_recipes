@@ -6,7 +6,7 @@ from langchain_ollama import ChatOllama
 import ollama
 import os
 
-st.set_page_config(page_title="Ollama Chat", page_icon=":llama:", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Query Ollama", page_icon=":llama:", initial_sidebar_state="expanded")
 
 if "model_name" not in st.session_state:
     # Load environment variables from .env file
