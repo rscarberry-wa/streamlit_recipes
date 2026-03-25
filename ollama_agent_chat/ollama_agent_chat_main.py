@@ -1,8 +1,10 @@
 import streamlit as st
 from dotenv import load_dotenv
 from langchain.agents import create_agent
+from langchain_core.messages import AIMessage
 from langchain_ollama import ChatOllama
 from langgraph.checkpoint.memory import InMemorySaver
+from langchain_tavily import TavilySearch
 import ollama
 import os
 
@@ -11,12 +13,16 @@ st.set_page_config(page_title="Ollama Agent Chat", page_icon=":llama:", initial_
 if "model_name" not in st.session_state:
     # Load environment variables from .env file
     load_dotenv()
-    st.session_state["model_name"] = os.getenv("OLLAMA_MODEL", "gemma3:27b")
+    st.session_state["model_name"] = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
     st.session_state["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/")
 if "system_prompt" not in st.session_state:
-    st.session_state["system_prompt"] = "You are a helpful assistant."
+    st.session_state["system_prompt"] = """You are a helpful assistant.
+Answer the user's questions thoroughly, but consisely.
+Perform web searches when the user asks about a specific topic."""
 if "thread_id" not in st.session_state:
     st.session_state["thread_id"] = 1
+if "stream_mode" not in st.session_state:
+    st.session_state["stream_mode"] = "values"
     
 @st.cache_resource(show_spinner="Loading model...")
 def get_agent(model_name: str, base_url: str, system_prompt: str):
@@ -24,6 +30,7 @@ def get_agent(model_name: str, base_url: str, system_prompt: str):
     agent = create_agent(
         model=llm,
         system_prompt=system_prompt,
+        tools=[TavilySearch()],
         checkpointer=InMemorySaver(),
     )
     return agent
@@ -37,13 +44,23 @@ def new_chat():
     st.session_state["messages"] = []
     st.session_state["thread_id"] += 1
 
-def agent_chat(agent, prompt: str):
-    for token, metadata in agent.stream(
-            {"messages": [{"role": "user", "content": prompt}]},
-            {"configurable": {"thread_id": str(st.session_state["thread_id"])}},
-            stream_mode="messages"
-    ):
-        yield token.content
+def agent_chat(agent, prompt: str, stream_mode: str = "values"):
+    if stream_mode == "values":
+        for step in agent.stream(
+                {"messages": [{"role": "user", "content": prompt}]},
+                {"configurable": {"thread_id": str(st.session_state["thread_id"])}},
+                stream_mode="values"
+        ):
+            last_message = step["messages"][-1]
+            if isinstance(last_message, AIMessage):
+                yield last_message.content
+    else:  # messages
+        for token, metadata in agent.stream(
+                {"messages": [{"role": "user", "content": prompt}]},
+                {"configurable": {"thread_id": str(st.session_state["thread_id"])}},
+                stream_mode="messages"
+        ):
+            yield token.content
 
 # Initialize chat history
 if "messages" not in st.session_state:
@@ -68,7 +85,8 @@ with st.sidebar:
     model_names = [model.model for model in st.session_state["models"]["models"]]
     model = st.selectbox("Model", options=model_names, key="model_name")
     st.write(f"Base URL: {st.session_state['base_url']}")
-    st.text_area("System Prompt", key="system_prompt", height=100)
+    st.radio("Stream Mode", options=["values", "messages"], key="stream_mode")
+    st.text_area("System Prompt", key="system_prompt", height=300)
 
 with title_row:
     st.title("🦙 Chat with an Ollama Agent")
@@ -95,7 +113,7 @@ if prompt := st.chat_input(f"Ask {st.session_state['model_name']} a question:"):
         )
 
         response = st.write_stream(
-            agent_chat(agent, prompt)
+            agent_chat(agent, prompt, st.session_state["stream_mode"])
         )
 
         # except Exception as e:
