@@ -16,9 +16,10 @@ if "model_name" not in st.session_state:
     st.session_state["model_name"] = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
     st.session_state["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/")
 if "system_prompt" not in st.session_state:
-    st.session_state["system_prompt"] = """You are a helpful assistant.
-Answer the user's questions thoroughly, but consisely.
-Perform web searches when the user asks about a specific topic."""
+    st.session_state["system_prompt"] = (
+        "You are a helpful assistant. Whenever the user asks you questions about "
+        "current events, use your web search tools to obtain the most up to date information."
+    )
 if "thread_id" not in st.session_state:
     st.session_state["thread_id"] = 1
 if "stream_mode" not in st.session_state:
