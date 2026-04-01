@@ -10,23 +10,25 @@ import os
 import base64
 from st_chat_input_multimodal import multimodal_chat_input
 
+# First streamlit op in the application
 st.set_page_config(page_title="Ollama Multimodal Agent Chat", page_icon=":llama:", initial_sidebar_state="collapsed")
 
-if "model_name" not in st.session_state:
-    # Load environment variables from .env file
-    load_dotenv()
-    st.session_state["model_name"] = os.getenv("OLLAMA_MODEL", "qwen3.5:latest")
-    st.session_state["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/")
-if "system_prompt" not in st.session_state:
-    st.session_state["system_prompt"] = (
-        "You are a helpful assistant that can understand both text and images. Answer the user's questions "
-        "thoroughly but concisely, and use web search tools to obtain the most up-to-date information if necessary."
-    )
-if "thread_id" not in st.session_state:
-    st.session_state["thread_id"] = 1
-if "stream_mode" not in st.session_state:
-    st.session_state["stream_mode"] = "values"
-
+def init_session_state():
+    """Initialize session state with default values. This should be called prior to accessing any session state variables."""
+    default_state = {
+        "messages": [],
+        "model_name": os.getenv("OLLAMA_MODEL", "qwen3.5:latest"),
+        "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/"),
+        "system_prompt": (
+            "You are a helpful assistant that can understand both text and images. Answer the user's questions "
+            "thoroughly but concisely, and use web search tools to obtain the most up-to-date information if necessary."
+        ),
+        "thread_id": 1,
+        "stream_mode": "values",
+    }
+    for key, value in default_state.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 @st.cache_resource(show_spinner="Loading model...")
 def get_agent(model_name: str, base_url: str, system_prompt: str):
@@ -38,7 +40,6 @@ def get_agent(model_name: str, base_url: str, system_prompt: str):
         checkpointer=InMemorySaver(),
     )
     return agent
-
 
 @st.cache_data
 def get_models(base_url: str):
@@ -96,10 +97,10 @@ def agent_chat(agent, user_input, stream_mode: str = "values"):
         ):
             yield token.content
 
-
-# Initialize chat history
-if "messages" not in st.session_state:
-    st.session_state["messages"] = []
+# Load required environment vars (API keys, etc.)
+load_dotenv()
+# Initialize the session state
+init_session_state()
 
 agent = get_agent(
     st.session_state["model_name"],
