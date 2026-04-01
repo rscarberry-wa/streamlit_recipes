@@ -120,6 +120,26 @@ def agent_chat(agent, user_input, stream_mode: str = "values"):
         ):
             yield token.content
 
+def display_message(message):
+    """Display a message in the chat window."""
+    if message["role"] == "user":
+        # For user messages, display the text and images separately
+        with st.chat_message("user"):
+           user_input = message["content"]
+           if "text" in user_input:
+               st.write(user_input["text"])
+           if "files" in user_input:
+                for file in user_input["files"]:
+                    try:
+                        base64_data = file['data'].split(',')[1] if ',' in file['data'] else file['data']
+                        image_bytes = base64.b64decode(base64_data)
+                        st.image(image_bytes, caption=file['name'], width=600)
+                    except Exception as e:
+                        st.error(f"Error processing file {file['name']}: {e}")
+    elif message["role"] == "assistant":
+        with st.chat_message("assistant"):
+            st.write(message["content"])
+
 # Load required environment vars (API keys, etc.)
 load_dotenv()
 # Initialize the session state
@@ -151,22 +171,7 @@ st.divider()
 
 # Display history messages
 for message in st.session_state["messages"]:
-    if message["role"] == "user":
-        with st.chat_message("user"):  # Must be "user" or "assistant"
-           user_input = message["content"]
-           if "text" in user_input:
-               st.write(user_input["text"])
-           if "files" in user_input:
-                for file in user_input["files"]:
-                    try:
-                        base64_data = file['data'].split(',')[1] if ',' in file['data'] else file['data']
-                        image_bytes = base64.b64decode(base64_data)
-                        st.image(image_bytes, caption=file['name'], width=200)
-                    except Exception as e:
-                        st.error(f"Error processing file {file['name']}: {e}")
-    elif message["role"] == "assistant":
-        with st.chat_message("assistant"):
-            st.write(message["content"])
+    display_message(message)
 
 model = get_selected_model()
 
@@ -182,18 +187,9 @@ if model is not None:
     )
 
     if user_input:
-        with st.chat_message("user"):
-            if "text" in user_input:
-                st.write(user_input["text"])
-            if "files" in user_input:
-                for file in user_input["files"]:
-                    try:
-                        base64_data = file['data'].split(',')[1] if ',' in file['data'] else file['data']
-                        image_bytes = base64.b64decode(base64_data)
-                        st.image(image_bytes, caption=file['name'], width=200)
-                    except Exception as e:
-                        st.error(f"Error processing file {file['name']}: {e}")
-        st.session_state["messages"].append({"role": "user", "content": user_input})
+        user_message = {"role": "user", "content": user_input}
+        display_message(user_message)
+        st.session_state["messages"].append(user_message)
         with st.chat_message("assistant"):
             agent = get_agent(
                 model,
