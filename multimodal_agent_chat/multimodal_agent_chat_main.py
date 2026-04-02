@@ -1,3 +1,5 @@
+from typing import Dict, Any
+
 import streamlit as st
 from dotenv import load_dotenv
 from langchain.agents import create_agent
@@ -17,7 +19,7 @@ def init_session_state():
     """Initialize session state with default values. This should be called prior to accessing any session state variables."""
     default_state = {
         "messages": [],
-        "model_name": os.getenv("OLLAMA_MODEL", "qwen3.5:latest"),
+        "model_name": None,
         "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/"),
         "system_prompt": (
             "You are a helpful assistant that can understand both text and images. Answer the user's questions "
@@ -31,12 +33,13 @@ def init_session_state():
             st.session_state[key] = value
 
 @st.cache_resource(show_spinner="Loading model...")
-def get_agent(model_name: str, base_url: str, system_prompt: str):
-    llm = ChatOllama(model=model_name, base_url=base_url)
+def get_agent(model: Dict[str, Any], base_url: str, system_prompt: str):
+    llm = ChatOllama(model=model["name"], base_url=base_url)
+    tools = [TavilySearch()] if model["tools"] else []
     agent = create_agent(
         model=llm,
         system_prompt=system_prompt,
-        tools=[TavilySearch()],
+        tools=tools,
         checkpointer=InMemorySaver(),
     )
     return agent
@@ -49,9 +52,29 @@ def get_models(base_url: str):
     for m in model_list["models"]:
         info = ollama.show(m.model)
         capabilities = info["capabilities"]
-        if "tools" in capabilities and "vision" in capabilities:
-            models.append(m.model)
+        if "tools" in capabilities or "vision" in capabilities:
+            display_name = m.model
+            if "vision" in capabilities:
+                display_name += " 🔎"
+            if "tools" in capabilities:
+                display_name += " 🛠️"
+            models.append({
+                "name": m.model,
+                "display_name": display_name,
+                "vision": "vision" in capabilities,
+                "tools": "tools" in capabilities,
+            })
     return models
+
+def get_selected_model() -> Dict[str, Any] | None:
+    """Get the dictionary describing the selected model."""
+    display_name = st.session_state["model_name"]
+    if display_name is None:
+        return None
+    for model in st.session_state["models"]:
+        if model["display_name"] == display_name:
+            return model
+    return None
 
 def new_chat():
     st.session_state["messages"] = []
@@ -97,16 +120,30 @@ def agent_chat(agent, user_input, stream_mode: str = "values"):
         ):
             yield token.content
 
+def display_message(message):
+    """Display a message in the chat window."""
+    if message["role"] == "user":
+        # For user messages, display the text and images separately
+        with st.chat_message("user"):
+           user_input = message["content"]
+           if "text" in user_input:
+               st.write(user_input["text"])
+           if "files" in user_input:
+                for file in user_input["files"]:
+                    try:
+                        base64_data = file['data'].split(',')[1] if ',' in file['data'] else file['data']
+                        image_bytes = base64.b64decode(base64_data)
+                        st.image(image_bytes, caption=file['name'], width=600)
+                    except Exception as e:
+                        st.error(f"Error processing file {file['name']}: {e}")
+    elif message["role"] == "assistant":
+        with st.chat_message("assistant"):
+            st.write(message["content"])
+
 # Load required environment vars (API keys, etc.)
 load_dotenv()
 # Initialize the session state
 init_session_state()
-
-agent = get_agent(
-    st.session_state["model_name"],
-    st.session_state["base_url"],
-    st.session_state["system_prompt"]
-)
 
 if "models" not in st.session_state:
     st.session_state["models"] = get_models(st.session_state["base_url"])
@@ -118,7 +155,7 @@ title_row = st.container(
 
 with st.sidebar:
     st.subheader("Ollama Settings")
-    model_names = st.session_state["models"]
+    model_names = [model["display_name"] for model in st.session_state["models"]]
     model = st.selectbox("Model", options=model_names, key="model_name")
     st.write(f"Base URL: {st.session_state['base_url']}")
     st.radio("Stream Mode", options=["values", "messages"], key="stream_mode")
@@ -134,52 +171,33 @@ st.divider()
 
 # Display history messages
 for message in st.session_state["messages"]:
-    if message["role"] == "user":
-        with st.chat_message("user"):  # Must be "user" or "assistant"
-           user_input = message["content"]
-           if "text" in user_input:
-               st.write(user_input["text"])
-           if "files" in user_input:
-                for file in user_input["files"]:
-                    try:
-                        base64_data = file['data'].split(',')[1] if ',' in file['data'] else file['data']
-                        image_bytes = base64.b64decode(base64_data)
-                        st.image(image_bytes, caption=file['name'], width=200)
-                    except Exception as e:
-                        st.error(f"Error processing file {file['name']}: {e}")
-    elif message["role"] == "assistant":
+    display_message(message)
+
+model = get_selected_model()
+
+if model is not None:
+    accepted_file_types = ["jpg", "jpeg", "png", "gif", "webp"] if model["vision"] else []
+    # React to user input
+    user_input = multimodal_chat_input(
+        placeholder=f"Ask {model['name']} a question...",
+        enable_voice_input=True,
+        voice_language="en-US",
+        voice_recognition_method="web_speech",
+        accepted_file_types=accepted_file_types
+    )
+
+    if user_input:
+        user_message = {"role": "user", "content": user_input}
+        display_message(user_message)
+        st.session_state["messages"].append(user_message)
         with st.chat_message("assistant"):
-            st.write(message["content"])
-
-# React to user input
-user_input = multimodal_chat_input(
-    placeholder=f"Ask {st.session_state['model_name']} a question...",
-    enable_voice_input=True,
-    voice_language="en-US",
-    voice_recognition_method="web_speech"
-)
-
-if user_input:
-    with st.chat_message("user"):
-        if "text" in user_input:
-            st.write(user_input["text"])
-        if "files" in user_input:
-            for file in user_input["files"]:
-                try:
-                    base64_data = file['data'].split(',')[1] if ',' in file['data'] else file['data']
-                    image_bytes = base64.b64decode(base64_data)
-                    st.image(image_bytes, caption=file['name'], width=200)
-                except Exception as e:
-                    st.error(f"Error processing file {file['name']}: {e}")
-    st.session_state["messages"].append({"role": "user", "content": user_input})
-    with st.chat_message("assistant"):
-        agent = get_agent(
-            st.session_state["model_name"],
-            st.session_state["base_url"],
-            st.session_state["system_prompt"]
-        )
-        response = st.write_stream(
-            agent_chat(agent, user_input, st.session_state["stream_mode"])
-        )
-    st.session_state["messages"].append({"role": "assistant", "content": response})
-    st.rerun()
+            agent = get_agent(
+                model,
+                st.session_state["base_url"],
+                st.session_state["system_prompt"]
+            )
+            response = st.write_stream(
+                agent_chat(agent, user_input, st.session_state["stream_mode"])
+            )
+        st.session_state["messages"].append({"role": "assistant", "content": response})
+        st.rerun()
