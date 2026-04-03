@@ -60,7 +60,9 @@ if __name__ == "__main__":
     import sys
 
     if sys.platform == "win32":
-        # Suppress spurious WinError 10054 on client disconnect
+        # Suppress spurious WinError 10054 on client disconnect.
+        # Must use run_async() + loop.run_until_complete() so FastMCP runs on
+        # this loop instead of creating a new one via asyncio.run().
         loop = asyncio.ProactorEventLoop()
         def _ignore_connection_reset(loop, context):
             if "WinError 10054" in str(context.get("exception", "")):
@@ -68,5 +70,6 @@ if __name__ == "__main__":
             loop.default_exception_handler(context)
         loop.set_exception_handler(_ignore_connection_reset)
         asyncio.set_event_loop(loop)
-
-    mcp.run(transport="streamable-http")
+        loop.run_until_complete(mcp.run_async(transport="streamable-http"))
+    else:
+        mcp.run(transport="streamable-http")
