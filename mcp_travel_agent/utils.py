@@ -16,6 +16,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_ollama import ChatOllama
 from langchain_tavily import TavilySearch
 from langgraph.checkpoint.memory import InMemorySaver
+from mcp_utils import McpRetryInterceptor
 
 
 @st.cache_data
@@ -56,7 +57,8 @@ async def get_mcp_tools(mcp_json: str):
             return None
     if mcp_config:
         try:
-            client = MultiServerMCPClient(mcp_config)
+            # The McpRetryInterceptor will retry failed requests
+            client = MultiServerMCPClient(mcp_config, tool_interceptors=[McpRetryInterceptor()])
             tools = await client.get_tools()
             return tools
         except Exception as e:
